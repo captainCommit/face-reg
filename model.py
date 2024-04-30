@@ -2,6 +2,8 @@ import uuid
 import cv2
 import os
 import csv
+import os
+from PIL import Image
 
 class FaceDetector:
     """
@@ -32,6 +34,7 @@ class FaceDetector:
         image = cv2.imread(image_path)
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        print(faces)
         self.faces = [Face((x, y, w, h), None, None) for (x, y, w, h) in faces]
 
 
@@ -107,6 +110,7 @@ class FaceDist:
             None
         """
         for image_path in self.images:
+            print(image_path)
             self.face_detector.detect_faces(image_path)
             faces = self.face_detector.faces
             for face in faces:
@@ -179,11 +183,13 @@ class Orchestrator:
             None
         """
         # Get the list of image files in the folder
-        image_files = [os.path.join(self.folder, file) for file in os.listdir(self.folder) if file.endswith('.jpg')]
+        image_files = [os.path.join(self.folder, file) for file in os.listdir(self.folder) if file.endswith('.png')]
 
         # Create a FaceMap instance
-        face_map = FaceDist(image_files, self.face_detector)
+
+        face_map = FaceDist(image_files, self.faceDector)
         face_map.create_face_map()
+        print(face_map.face_map)
 
         # Create a CSV file to store the face id and extracted face image path
         csv_file = 'face_data.csv'
@@ -202,7 +208,43 @@ class Orchestrator:
                     face_extractor.extract_and_save_face(output_path)
 
                     writer.writerow([str(face.id), os.path.join(output_path, str(face.id) + '.jpg')])
+        print('Face detection and extraction completed. CSV file created.')
 
-                print('Face detection and extraction completed. CSV file created.')
-                
+
+class Converter:
+    """
+    A class that converts images in a folder to a specified format.
+
+    Attributes:
+        folder (str): The path to the folder containing the images.
+        output_format (str): The desired output format for the images.
+
+    Methods:
+        convert_images(): Converts the images in the folder to the specified format.
+    """
+
+    def __init__(self, folder, output_format):
+        self.folder = folder
+        self.output_format = output_format
+
+    def convert_images(self):
+        """
+        Converts the images in the folder to the specified format.
+
+        Returns:
+            None
+        """
+        image_files = [file for file in os.listdir(self.folder) if file.lower().endswith(('.nef', '.jpg'))]
+
+        for image_file in image_files:
+            image_path = os.path.join(self.folder, image_file)
+            output_folder = os.path.join(self.folder,'converted-images')
+            os.makedirs(output_folder, exist_ok=True)
+            try:
+                image = Image.open(image_path)
+                image.save(os.path.join(output_folder,os.path.splitext(image_file)[0]+"."+self.output_format.lower()), self.output_format.upper())
+                print(f"Converted {image_file} to {self.output_format.upper()}")
+            except Exception as e:
+                print(e)
+                print(f"Failed to convert {image_file}: {str(e)}")
 

@@ -3,8 +3,9 @@ import cv2
 import os
 import csv
 import os
+from mtcnn import MTCNN
 from PIL import Image
-
+import constants
 class FaceDetector:
     """
     A class that detects faces in an image using Haar cascades.
@@ -17,11 +18,14 @@ class FaceDetector:
         detect_faces(image_path): Detects faces in the given image and stores them in the 'faces' attribute.
     """
 
-    def __init__(self):
+    def __init__(self, mode = 'open_cv'):
         self.faces = []
-        self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-
-    def detect_faces(self, image_path):
+        self.mode = mode
+        if mode == constants.FACE_DETECTION_MODES.OPEN_CV:
+            self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        elif mode == constants.FACE_DETECTION_MODES.MTCNN:
+            self.face_cascade = MTCNN()
+    def detect_faces(self, image_path, mode = constants.FACE_DETECTION_MODES.OPEN_CV):
         """
         Detects faces in the given image and stores them in the 'faces' attribute.
 
@@ -32,11 +36,14 @@ class FaceDetector:
             None
         """
         image = cv2.imread(image_path)
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-        print(faces)
-        self.faces = [Face((x, y, w, h), None, None) for (x, y, w, h) in faces]
-
+        if self.mode == constants.FACE_DETECTION_MODES.OPEN_CV:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+            print(faces)
+            self.faces = [Face((x, y, w, h), None, None) for (x, y, w, h) in faces]
+        elif self.mode == constants.FACE_DETECTION_MODES.MTCNN:
+            self.face_cascade = MTCNN()
+            self.faces = [Face((face['box']['x'],face['box']['y'],face['box']['w'],face['box']['h']), None, None) for face in self.face_cascade.detect_faces(image)]
 
 class Face:
     """
@@ -172,9 +179,10 @@ class Orchestrator:
         run(): Runs the face detection and extraction process.
     """
 
-    def __init__(self, folder):
+    def __init__(self, folder, image_format = 'jpg'):
         self.folder = folder
         self.faceDector = FaceDetector()
+        self.image_format = image_format 
     def run(self):
         """
         Runs the face detection and extraction process.
@@ -183,7 +191,7 @@ class Orchestrator:
             None
         """
         # Get the list of image files in the folder
-        image_files = [os.path.join(self.folder, file) for file in os.listdir(self.folder) if file.endswith('.png')]
+        image_files = [os.path.join(self.folder, file) for file in os.listdir(self.folder) if file.endswith(f'.{self.image_format }')]
 
         # Create a FaceMap instance
 
@@ -242,6 +250,7 @@ class Converter:
             os.makedirs(output_folder, exist_ok=True)
             try:
                 image = Image.open(image_path)
+                cv2.resize(image, (100, 100))
                 image.save(os.path.join(output_folder,os.path.splitext(image_file)[0]+"."+self.output_format.lower()), self.output_format.upper())
                 print(f"Converted {image_file} to {self.output_format.upper()}")
             except Exception as e:

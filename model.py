@@ -3,6 +3,10 @@ import cv2
 import os
 import csv
 import os
+import glob
+import rawpy
+import imageio
+import traceback
 from mtcnn import MTCNN
 from PIL import Image
 import constants
@@ -18,14 +22,14 @@ class FaceDetector:
         detect_faces(image_path): Detects faces in the given image and stores them in the 'faces' attribute.
     """
 
-    def __init__(self, mode = 'open_cv'):
+    def __init__(self, mode = constants.FACE_DETECTION_MODES.MTCNN):
         self.faces = []
         self.mode = mode
         if mode == constants.FACE_DETECTION_MODES.OPEN_CV:
             self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         elif mode == constants.FACE_DETECTION_MODES.MTCNN:
             self.face_cascade = MTCNN()
-    def detect_faces(self, image_path, mode = constants.FACE_DETECTION_MODES.OPEN_CV):
+    def detect_faces(self, image_path):
         """
         Detects faces in the given image and stores them in the 'faces' attribute.
 
@@ -39,11 +43,11 @@ class FaceDetector:
         if self.mode == constants.FACE_DETECTION_MODES.OPEN_CV:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-            print(faces)
             self.faces = [Face((x, y, w, h), None, None) for (x, y, w, h) in faces]
         elif self.mode == constants.FACE_DETECTION_MODES.MTCNN:
             self.face_cascade = MTCNN()
-            self.faces = [Face((face['box']['x'],face['box']['y'],face['box']['w'],face['box']['h']), None, None) for face in self.face_cascade.detect_faces(image)]
+            print(self.face_cascade.detect_faces(image))
+            self.faces = [Face((face['box'][0],face['box'][1],face['box'][2],face['box'][3]), None, None) for face in self.face_cascade.detect_faces(image)]
 
 class Face:
     """
@@ -117,7 +121,6 @@ class FaceDist:
             None
         """
         for image_path in self.images:
-            print(image_path)
             self.face_detector.detect_faces(image_path)
             faces = self.face_detector.faces
             for face in faces:
@@ -167,6 +170,7 @@ class FaceExtractor:
 
         save_path = output_path + '/' + filename + '.jpg'
         cv2.imwrite(save_path, face_crop)
+        return save_path
 
 class Orchestrator:
     """
@@ -179,7 +183,7 @@ class Orchestrator:
         run(): Runs the face detection and extraction process.
     """
 
-    def __init__(self, folder, image_format = 'jpg'):
+    def __init__(self, folder, image_format = constants.IMAGE_FORMATS.JPEG):
         self.folder = folder
         self.faceDector = FaceDetector()
         self.image_format = image_format 
@@ -191,13 +195,11 @@ class Orchestrator:
             None
         """
         # Get the list of image files in the folder
-        image_files = [os.path.join(self.folder, file) for file in os.listdir(self.folder) if file.endswith(f'.{self.image_format }')]
-
+        image_files = [os.path.join(self.folder, file) for file in os.listdir(self.folder)] #if file.endswith(f'.{self.image_format.value}')
         # Create a FaceMap instance
 
         face_map = FaceDist(image_files, self.faceDector)
         face_map.create_face_map()
-        print(face_map.face_map)
 
         # Create a CSV file to store the face id and extracted face image path
         csv_file = 'face_data.csv'
@@ -213,9 +215,8 @@ class Orchestrator:
                     face_extractor = FaceExtractor(image, face)
                     output_path = os.path.join(self.folder, 'extracted_faces')
                     os.makedirs(output_path, exist_ok=True)
-                    face_extractor.extract_and_save_face(output_path)
-
-                    writer.writerow([str(face.id), os.path.join(output_path, str(face.id) + '.jpg')])
+                    save_path = face_extractor.extract_and_save_face(output_path)
+                    writer.writerow([str(face.id), save_path])
         print('Face detection and extraction completed. CSV file created.')
 
 
@@ -231,9 +232,20 @@ class Converter:
         convert_images(): Converts the images in the folder to the specified format.
     """
 
-    def __init__(self, folder, output_format):
+    def __init__(self, folder, output_format = constants.IMAGE_FORMATS.JPEG):
         self.folder = folder
         self.output_format = output_format
+    
+    def convert_nef_to_jpg(in_path, out_path):
+    # sometimes the file ending can be .nef or .NEF, therefore I included both possibilities to save extra work.
+        with rawpy.imread(in_path) as raw:
+            rgb = raw.postprocess()
+            imageio.imwrite(out_path, rgb)
+            count = count + 1
+        with rawpy.imread(in_path) as raw:
+            rgb = raw.postprocess()
+            imageio.imwrite(out_path, rgb)
+            count = count + 1
 
     def convert_images(self):
         """
@@ -242,7 +254,7 @@ class Converter:
         Returns:
             None
         """
-        image_files = [file for file in os.listdir(self.folder) if file.lower().endswith(('.nef', '.jpg'))]
+        image_files = [file for file in os.listdir(self.folder) if file.lower().endswith((constants.IMAGE_FORMATS.NEF, constants.IMAGE_FORMATS.JPG))]
 
         for image_file in image_files:
             image_path = os.path.join(self.folder, image_file)
@@ -250,10 +262,12 @@ class Converter:
             os.makedirs(output_folder, exist_ok=True)
             try:
                 image = Image.open(image_path)
-                cv2.resize(image, (100, 100))
+                new_width  = 800
+                new_height = new_width * image.size[1] // image.size[0]
+                image = image.resize((new_width, new_height), Image.LANCZOS)
                 image.save(os.path.join(output_folder,os.path.splitext(image_file)[0]+"."+self.output_format.lower()), self.output_format.upper())
                 print(f"Converted {image_file} to {self.output_format.upper()}")
             except Exception as e:
-                print(e)
+                print(traceback.format_exc())
                 print(f"Failed to convert {image_file}: {str(e)}")
 

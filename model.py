@@ -10,6 +10,7 @@ import traceback
 from mtcnn import MTCNN
 from PIL import Image
 import constants
+import face_recognition
 class FaceDetector:
     """
     A class that detects faces in an image using Haar cascades.
@@ -111,7 +112,7 @@ class FaceDist:
     def __init__(self, images, face_detector):
         self.face_map = {}
         self.images = images
-        self.face_detector = face_detector if face_detector is not None else FaceDetector()
+        self.face_detector = face_detector if face_detector is not None else FaceDetector(mode = constants.FACE_DETECTION_MODES.OPEN_CV)
 
     def create_face_map(self):
         """
@@ -183,10 +184,12 @@ class Orchestrator:
         run(): Runs the face detection and extraction process.
     """
 
-    def __init__(self, folder, image_format = constants.IMAGE_FORMATS.JPEG):
+    def __init__(self, folder, image_format = constants.IMAGE_FORMATS.JPEG, detection_mode = constants.FACE_DETECTION_MODES.OPEN_CV):
         self.folder = folder
-        self.faceDector = FaceDetector()
+        self.faceDector = FaceDetector(detection_mode)
         self.image_format = image_format 
+        self.detection_mode = detection_mode
+
     def run(self):
         """
         Runs the face detection and extraction process.
@@ -195,7 +198,8 @@ class Orchestrator:
             None
         """
         # Get the list of image files in the folder
-        image_files = [os.path.join(self.folder, file) for file in os.listdir(self.folder)] #if file.endswith(f'.{self.image_format.value}')
+        image_files = [os.path.join(self.folder, file) for file in os.listdir(self.folder) if file.endswith(f'.{self.image_format.value}')] 
+        
         # Create a FaceMap instance
 
         face_map = FaceDist(image_files, self.faceDector)
@@ -236,16 +240,10 @@ class Converter:
         self.folder = folder
         self.output_format = output_format
     
-    def convert_nef_to_jpg(in_path, out_path):
-    # sometimes the file ending can be .nef or .NEF, therefore I included both possibilities to save extra work.
+    def convert_nef_to_jpg(self, in_path, out_path):
         with rawpy.imread(in_path) as raw:
             rgb = raw.postprocess()
             imageio.imwrite(out_path, rgb)
-            count = count + 1
-        with rawpy.imread(in_path) as raw:
-            rgb = raw.postprocess()
-            imageio.imwrite(out_path, rgb)
-            count = count + 1
 
     def convert_images(self):
         """
@@ -254,13 +252,17 @@ class Converter:
         Returns:
             None
         """
-        image_files = [file for file in os.listdir(self.folder) if file.lower().endswith((constants.IMAGE_FORMATS.NEF, constants.IMAGE_FORMATS.JPG))]
+        image_files = [file for file in os.listdir(self.folder) if file.lower().endswith((constants.IMAGE_FORMATS.NEF.value, constants.IMAGE_FORMATS.JPG.value))]
 
         for image_file in image_files:
             image_path = os.path.join(self.folder, image_file)
             output_folder = os.path.join(self.folder,'converted-images')
             os.makedirs(output_folder, exist_ok=True)
             try:
+                if image_file.lower().endswith(constants.IMAGE_FORMATS.NEF.value):
+                    self.convert_nef_to_jpg(image_path, os.path.join(output_folder,os.path.splitext(image_file)[0]+f".{self.output_format.lower()}"))
+                    print(f"Converted {image_file} to {self.output_format.upper()}")
+                    continue
                 image = Image.open(image_path)
                 new_width  = 800
                 new_height = new_width * image.size[1] // image.size[0]
